@@ -20,6 +20,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
+    "verify:traceability": "node --env-file=.env --import tsx scripts/verify-traceability.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -49,6 +50,7 @@
     "prettier-plugin-tailwindcss": "^0.8.1",
     "prisma": "^7.8.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }
