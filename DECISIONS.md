@@ -54,13 +54,68 @@ FAVORITE_REMOVE`) con `payload` JSONB flexible. Sostiene tanto la auditoría end
 
 Los usuarios viven en `auth.users` (Supabase Auth); nuestras tablas solo referencian `user_id`.
 
-**Trazabilidad con una sola query** (requisito del desafío):
+**Trazabilidad con una sola query** — ver sección **2.1** (dedicada al requisito central).
+
+## 2.1. Trazabilidad de punta a punta — la query única
+
+Requisito central del desafío: reconstruir con **una sola query** el recorrido completo de un
+usuario `login → búsqueda → scraping → click → favorito`. La query, literal:
 
 ```sql
 SELECT * FROM events WHERE user_id = $1 ORDER BY created_at ASC;
 ```
 
-reconstruye `login → búsqueda → scraping → click → favorito`.
+**Por qué una sola query alcanza.** `events` es un spine append-only: cada acción del recorrido se
+escribe como una fila (todo pasa por un único helper, `logEvent`). No hay que hacer `JOIN`s ni unir
+tablas por tipo de acción — el orden cronológico (`created_at ASC`) _es_ el recorrido. El índice
+`(user_id, created_at)` hace que la reconstrucción sea un range scan directo. En Prisma el
+equivalente tipado es `prisma.event.findMany({ where: { userId }, orderBy: { createdAt: "asc" } })`,
+que compila exactamente a ese `SELECT`.
+
+**Contrato de payload por `EventType`** (deliverable de coordinación entre streams). El `payload`
+es JSONB flexible, así que enriquecer un evento **no toca el schema**. Convención: claves
+`camelCase` (JS-native, igual que los campos Prisma). El lector es defensivo y también acepta las
+variantes `snake_case`.
+
+| Tipo              | payload (canónico)                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `LOGIN`           | `{ method?, email? }`                                                                 |
+| `SEARCH`          | `{ query, comuna?, searchId?, filters? }`                                             |
+| `SCRAPE`          | `{ source, status, resultCount, durationMs, httpStatus?, query?, searchId?, error? }` |
+| `CLICK`           | `{ externalId, url, title? }`                                                         |
+| `FAVORITE_ADD`    | `{ externalId, url, title?, price? }`                                                 |
+| `FAVORITE_REMOVE` | `{ externalId, url?, title? }`                                                        |
+
+**Claves de correlación** que hacen el recorrido no solo cronológico sino _enlazable_:
+
+- **`session_id`** (columna) agrupa un recorrido individual (la reconstrucción los separa por sesión).
+- **`searchId`** (en payload) enlaza `SEARCH ↔ SCRAPE`: qué scraping resultó de qué búsqueda.
+- **`externalId`** (en payload) enlaza `CLICK ↔ FAVORITE_*`: la misma propiedad a lo largo del embudo.
+
+Nota de diseño: `searchId` es correlación **a nivel de payload**, no una columna nueva — así el
+requisito "no cambiar el schema" se respeta y el modelo de eventos sigue siendo un spine plano.
+
+**Cómo se expone** (`src/lib/traceability.ts` es el read-side; `logEvent` es el write-side):
+
+- `getUserTimeline(userId)` corre la query única y devuelve `{ query, events, sessions }`, donde
+  `sessions` es el timeline ya reconstruido (agrupado por `session_id`, legible).
+- **Endpoint** `GET /api/traceability` — modelo de acceso:
+  - _Self mode_: con sesión Supabase válida devuelve el recorrido del propio usuario (producción).
+  - _Debug mode_: `?userId=<uuid>` + secreto (`x-debug-secret` o `?secret=`) = `CRON_SECRET`.
+    Permite al evaluador inspeccionar cualquier recorrido sin flujo de login. Se deshabilita si
+    `CRON_SECRET` está vacío. Sin credenciales → `401`.
+- **Página de debug** `/debug/traceability` — renderiza el timeline como línea de tiempo vertical
+  y trae un botón "Sembrar recorrido de ejemplo" (server action) que genera
+  `login → búsqueda → scraping → click → favorito` en vivo. Funciona con un usuario demo aunque el
+  stream de auth aún no exista.
+
+**Cómo se verificó.** `npm run verify:traceability` (`scripts/verify-traceability.ts`) siembra un
+recorrido sintético contra la DB real, corre la query única y comprueba las invariantes: 5 pasos,
+orden `LOGIN → SEARCH → SCRAPE → CLICK → FAVORITE_ADD`, `SEARCH.searchId == SCRAPE.searchId`,
+`CLICK.externalId == FAVORITE_ADD.externalId`; luego limpia. Además se validó en runtime en el
+navegador (sembrar en `/debug/traceability` y ver el timeline reconstruido).
+
+Reconstruye `login → búsqueda → scraping → click → favorito`.
 
 ## 3. Robustez — ¿qué pasa si el portal cambia, bloquea o no responde?
 
