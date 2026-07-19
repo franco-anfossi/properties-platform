@@ -1,0 +1,45 @@
+name: CI
+
+# Corre en cada PR (requisito del stream) y en push a main (mantiene main verde).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancela runs obsoletos del mismo ref cuando llegan pushes nuevos.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint · Typecheck · Format · Test
+    runs-on: ubuntu-latest
+    # Sin secretos ni env de DB: los tests son puros y `prisma generate`
+    # (postinstall) no necesita DATABASE_URL/DIRECT_URL.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Instala deps de forma reproducible desde package-lock. El postinstall
+      # (`prisma generate`) corre aquí y genera el cliente sin tocar la DB.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Test
+        run: npm run test
