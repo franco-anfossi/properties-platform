@@ -1,0 +1,68 @@
+// Modelo de datos — SOLO estado propio.
+// Las propiedades NUNCA se persisten (son dato efímero del portal).
+// Los usuarios viven en auth.users (Supabase Auth); aquí solo referenciamos user_id (UUID).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Prisma 7: las URLs de conexión viven en prisma.config.ts (no aquí).
+// Runtime: driver adapter @prisma/adapter-pg con DATABASE_URL (pooler, 6543).
+// Migraciones: prisma.config.ts con DIRECT_URL (conexión directa, 5432).
+// Nuestras tablas viven en el schema public; auth.users lo gestiona Supabase.
+datasource db {
+  provider = "postgresql"
+}
+
+enum EventType {
+  LOGIN
+  SEARCH
+  SCRAPE
+  CLICK
+  FAVORITE_ADD
+  FAVORITE_REMOVE
+}
+
+/// Spine de trazabilidad (append-only). Una sola query reconstruye el recorrido:
+/// SELECT * FROM events WHERE user_id = ? ORDER BY created_at ASC
+model Event {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  sessionId String?   @map("session_id") @db.Uuid
+  type      EventType
+  payload   Json      @default("{}")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId, createdAt])
+  @@map("events")
+}
+
+/// Favoritos = estado propio. Guardamos referencia (external_id + url) + snapshot mínimo
+/// del momento en que se marcó, para poder mostrarlo aunque la publicación muera.
+model Favorite {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  externalId String   @map("external_id")
+  url        String
+  title      String
+  price      String? // texto de display del portal (ej: "UF 6.500", "$350.000.000")
+  currency   String?
+  imageUrl   String?  @map("image_url")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, externalId])
+  @@index([userId])
+  @@map("favorites")
+}
+
+/// Idempotencia del job diario: un envío por usuario por día como máximo.
+model EmailDispatch {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  dispatchDate DateTime @map("dispatch_date") @db.Date
+  sentAt       DateTime @default(now()) @map("sent_at") @db.Timestamptz(6)
+
+  @@unique([userId, dispatchDate])
+  @@map("email_dispatches")
+}
