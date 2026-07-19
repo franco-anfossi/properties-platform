@@ -30,10 +30,14 @@ nada de esta infra.
    - Un test puro auto-contenido (prueba que el runner + assertions funcionan).
    - Un test que importa `SOURCE` del scraper vía el alias `@/` → prueba que la **resolución de
      módulos y el alias funcionan bajo Vitest** (valor real para CI), sin tocar la DB.
-7. **CI sin secretos:** se verificó que `prisma generate` (postinstall) corre con
-   `DATABASE_URL`/`DIRECT_URL` **desactivados** — `prisma.config.ts` referencia `env("DIRECT_URL")`
-   de forma lazy (solo lo usan los comandos de migración, no `generate`). Por eso el workflow no
-   define ningún secreto ni variable de entorno de DB.
+7. **CI sin secretos, pero con placeholders de env para Prisma:** Prisma 7 evalúa
+   `env("DIRECT_URL")` al **cargar** `prisma.config.ts`, y eso ocurre en cualquier comando prisma
+   — incluido el `prisma generate` del `postinstall`. Si la variable no resuelve, lanza
+   `PrismaConfigEnvError`. En local esto pasaba desapercibido porque `import "dotenv/config"` lee el
+   archivo `.env` (que existe en el worktree pero **no** en CI). Fix: el workflow define
+   `DATABASE_URL`/`DIRECT_URL` como **placeholders no-secretos** (`localhost`) a nivel de job. No se
+   conecta a ninguna DB — solo hacen que `env()` resuelva. Se mantiene "sin secretos ni DB real".
+   (Se prefirió esto sobre tocar `prisma.config.ts`, que es config compartida entre streams.)
 8. **Node 24** en CI (coincide con el runtime de Vercel y con el local).
 9. **Triggers:** `pull_request` (requisito) + `push` a `main` (mantiene `main` verde y da señal
    post-merge). `concurrency` cancela runs obsoletos del mismo ref.

@@ -15,8 +15,14 @@ jobs:
   checks:
     name: Lint · Typecheck · Format · Test
     runs-on: ubuntu-latest
-    # Sin secretos ni env de DB: los tests son puros y `prisma generate`
-    # (postinstall) no necesita DATABASE_URL/DIRECT_URL.
+    # Placeholders NO secretos. Prisma 7 evalúa `env("DIRECT_URL")` al *cargar*
+    # prisma.config.ts, cosa que ocurre también en `prisma generate` (postinstall),
+    # y lanza si la variable no resuelve. Estas URLs son de mentira (localhost):
+    # nada se conecta a ellas — solo hacen que la variable resuelva. No hay DB real
+    # ni secretos en CI, y los tests son puros (no tocan la DB).
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4
