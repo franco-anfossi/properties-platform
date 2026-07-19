@@ -10,9 +10,14 @@ export interface PropertyResult {
   url: string; // URL original en el portal (para el click)
 }
 
+export type Operation = "venta" | "arriendo";
+export type PropertyType = "departamento" | "casa";
+
 export interface SearchParams {
   query: string; // dirección o comuna
-  // Extensible a futuro: operation (venta/arriendo), propertyType, page, etc.
+  operation?: Operation; // default: "venta"
+  propertyType?: PropertyType; // default: "departamento"
+  // Extensible a futuro: page, filtros de precio/superficie, etc.
 }
 
 export type ScrapeStatus = "ok" | "empty" | "blocked" | "error";
