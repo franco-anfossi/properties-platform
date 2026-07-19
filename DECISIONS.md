@@ -22,6 +22,23 @@ headless sería overhead puro (más RAM, más latencia, más frágil) sin gananc
 rápido, más barato y más simple de operar. Playwright queda como plan de contingencia si el portal
 migrara a rendering 100% client-side.
 
+**Cómo se extrae (implementado en `src/lib/scraper/`, verificado en vivo el 2026-07-19):** cada
+propiedad viene como un objeto `{"id":"POLYCARD",…,"polycard":{…}}` embebido en el HTML. No se usa
+regex frágil: se localiza cada marcador y se extrae el objeto con un **escáner de llaves balanceadas
+consciente de strings** (respeta `{`/`}` y `\"` dentro de comillas), luego `JSON.parse`. Un bloque
+que no parsea se **descarta** sin romper el resto. Detalles del mapeo:
+
+- **Dedup por `metadata.id`**: una búsqueda trae ~150 bloques que son ~48 publicaciones únicas (cada
+  una repetida ~3× por distintos layouts). Ante duplicados se prefiere el **permalink** real sobre el
+  redirect de anuncio (`click1.portalinmobiliario.com`, cards con `is_pad:"true"`).
+- **Precio**: `components[price].current_price {value, currency}`. `CLF` → UF, `CLP` → $; formato
+  chileno con separador de miles (`UF 4.957`, `$350.000.000`).
+- **Imagen por construcción** (no segundo parse): `https://http2.mlstatic.com/D_NQ_NP_<pictureId>-O.webp`
+  a partir de `pictures.pictures[0].id` (verificado HTTP 200 `image/webp`).
+- **URL**: los permalinks vienen **relativos sin scheme** (`portalinmobiliario.com/MLC-…-_JM`); se
+  antepone `https://`. La query (comuna/dirección) se _slugifica_ (sin acentos, `ñ→n`) y se mapea a
+  `{operation}/{propertyType}/{comuna}-metropolitana` (sin sufijo de región el portal responde 301).
+
 ## 2. Modelo de datos — ¿qué guardo y qué no?
 
 **Principio:** la DB guarda **solo estado propio**. Las **propiedades no se persisten** como
