@@ -37,6 +37,10 @@ yarn-error.log*
 # enunciado del desafío (documento de terceros — se mantiene solo local)
 docs/*.pdf
 
+# supabase CLI (temp/link state; migramos con Prisma, no con el workflow local)
+supabase/.temp
+supabase/.branches
+
 # vercel
 .vercel
 
