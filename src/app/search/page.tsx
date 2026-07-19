@@ -9,7 +9,11 @@ export const dynamic = "force-dynamic";
  * Página de búsqueda (protegida). El middleware ya bloquea `/search` sin sesión;
  * acá revalidamos en el server como defensa en profundidad antes de renderizar.
  */
-export default async function SearchPage() {
+export default async function SearchPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ query?: string }>;
+}) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -18,6 +22,10 @@ export default async function SearchPage() {
   if (!user) {
     redirect("/login");
   }
+
+  // Permite repetir una búsqueda desde el historial (/search?query=...).
+  const { query } = await searchParams;
+  const initialQuery = typeof query === "string" ? query : "";
 
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
@@ -31,7 +39,7 @@ export default async function SearchPage() {
         </p>
       </header>
 
-      <SearchClient />
+      <SearchClient initialQuery={initialQuery} />
     </main>
   );
 }

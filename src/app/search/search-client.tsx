@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { PropertyResult } from "@/lib/scraper/types";
 import type { SearchResponse } from "@/app/api/search/types";
 import { PropertyCard } from "./property-card";
@@ -12,18 +12,17 @@ type ViewState = "idle" | "loading" | "success" | "empty" | "error";
  * del recorrido (para el tracking de clicks) y renderiza los resultados. El scraping
  * en vivo puede tardar hasta ~30 s, así que el estado de carga es tolerante.
  */
-export function SearchClient() {
-  const [query, setQuery] = useState("");
+export function SearchClient({ initialQuery = "" }: { initialQuery?: string }) {
+  const [query, setQuery] = useState(initialQuery);
   const [state, setState] = useState<ViewState>("idle");
   const [results, setResults] = useState<PropertyResult[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastQuery, setLastQuery] = useState("");
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = query.trim();
-    if (!trimmed || state === "loading") return;
+  const runSearch = useCallback(async (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
 
     setState("loading");
     setErrorMsg(null);
@@ -64,7 +63,22 @@ export function SearchClient() {
       );
       setState("error");
     }
+  }, []);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (state === "loading") return;
+    void runSearch(query);
   }
+
+  // Auto-búsqueda al llegar con ?query= (ej: repetir una búsqueda desde el historial).
+  useEffect(() => {
+    // La búsqueda es async (setea estado tras el fetch), no un setState síncrono en el effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (initialQuery.trim()) void runSearch(initialQuery);
+    // Solo en el mount: repetir la búsqueda inicial del ?query= una vez.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex flex-col gap-8">
