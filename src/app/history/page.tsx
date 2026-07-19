@@ -3,7 +3,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { EventType } from "@/lib/events";
-import { AppNav } from "@/components/app-nav";
 
 // Historial de búsquedas. NO es una tabla propia: se lee del spine de trazabilidad
 // (events WHERE type='SEARCH'), según DECISIONS.md §2. Ordenado por fecha, clickeable para re-buscar.
@@ -45,7 +44,6 @@ export default async function HistoryPage() {
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-black">
-      <AppNav active="history" />
       <main className="mx-auto max-w-3xl px-4 py-8">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
           Historial de búsquedas

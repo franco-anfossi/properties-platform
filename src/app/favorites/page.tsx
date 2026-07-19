@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getFavorites } from "@/lib/favorites";
-import { AppNav } from "@/components/app-nav";
 import { RemoveFavorite } from "./remove-favorite";
 
 // Página de favoritos: estado propio, se muestra desde el snapshot mínimo (título/precio/imagen del
@@ -21,7 +20,6 @@ export default async function FavoritesPage() {
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-black">
-      <AppNav active="favorites" />
       <main className="mx-auto max-w-5xl px-4 py-8">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
           Favoritos
