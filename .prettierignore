@@ -3,3 +3,6 @@ node_modules
 src/generated
 package-lock.json
 prisma/migrations
+# Fixtures HTML del scraper: capturas reales del portal (JSON polycard embebido) y un caso
+# intencionalmente malformado. Reformatearlos rompería los tests del parser.
+src/lib/scraper/__tests__/fixtures
