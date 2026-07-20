@@ -1,5 +1,5 @@
-// Render puro del correo de historial. Sin I/O: recibe datos ya normalizados y devuelve
-// asunto + HTML + texto plano. Testeable con fixtures.
+// Render puro del correo digest diario. Sin I/O: recibe datos ya normalizados y devuelve
+// asunto + HTML + texto plano. Un solo correo por día con una sección por usuario. Testeable.
 
 export interface SearchEntry {
   time: string; // "HH:mm" en la zona del envío
@@ -8,11 +8,15 @@ export interface SearchEntry {
   resultCount?: number | null;
 }
 
-export interface HistoryEmailInput {
-  userLabel: string; // email del usuario o "user <id-corto>"
+export interface UserHistory {
+  label: string; // email del usuario o "user <id-corto>"
+  searches: SearchEntry[];
+}
+
+export interface DigestEmailInput {
   dispatchDate: string; // "YYYY-MM-DD"
   timeZone: string;
-  searches: SearchEntry[];
+  users: UserHistory[]; // un bloque por usuario con actividad ese día
 }
 
 export interface RenderedEmail {
@@ -36,28 +40,57 @@ function describeSearch(entry: SearchEntry): string {
   return parts.filter(Boolean).join(" · ");
 }
 
-export function renderHistoryEmail(input: HistoryEmailInput): RenderedEmail {
-  const { userLabel, dispatchDate, timeZone, searches } = input;
+function plural(n: number, singular: string, plural_: string): string {
+  return `${n} ${n === 1 ? singular : plural_}`;
+}
 
-  const subject = `Historial de búsquedas — ${userLabel} — ${dispatchDate}`;
+// Renderiza el digest diario: un correo con el historial de búsquedas de cada usuario.
+export function renderDigestEmail(input: DigestEmailInput): RenderedEmail {
+  const { dispatchDate, timeZone, users } = input;
 
-  const rows = searches
-    .map((s) => {
-      const desc = escapeHtml(describeSearch(s));
-      const count =
-        typeof s.resultCount === "number"
-          ? `${s.resultCount} resultado${s.resultCount === 1 ? "" : "s"}`
-          : "—";
+  const totalSearches = users.reduce((n, u) => n + u.searches.length, 0);
+  const subject = `Historial de búsquedas de la plataforma — ${dispatchDate} — ${plural(users.length, "usuario", "usuarios")}`;
+
+  const userBlocks = users
+    .map((user) => {
+      const rows = user.searches
+        .map((s) => {
+          const desc = escapeHtml(describeSearch(s));
+          const count =
+            typeof s.resultCount === "number"
+              ? plural(s.resultCount, "resultado", "resultados")
+              : "—";
+          return `
+            <tr>
+              <td style="padding:9px 12px;border-bottom:1px solid #eee;color:#666;white-space:nowrap;font-variant-numeric:tabular-nums;">${escapeHtml(s.time)}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid #eee;color:#111;">${desc}</td>
+              <td style="padding:9px 12px;border-bottom:1px solid #eee;color:#666;white-space:nowrap;">${escapeHtml(count)}</td>
+            </tr>`;
+        })
+        .join("");
+
       return `
         <tr>
-          <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#666;white-space:nowrap;font-variant-numeric:tabular-nums;">${escapeHtml(s.time)}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#111;">${desc}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #eee;color:#666;white-space:nowrap;">${escapeHtml(count)}</td>
+          <td style="padding:20px 28px 0;">
+            <p style="margin:0;font-size:14px;color:#111;"><strong>${escapeHtml(user.label)}</strong> <span style="color:#999;">· ${escapeHtml(plural(user.searches.length, "búsqueda", "búsquedas"))}</span></p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 28px 4px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;">
+              <thead>
+                <tr>
+                  <th align="left" style="padding:6px 12px;border-bottom:2px solid #e6e8eb;color:#888;font-weight:600;">Hora</th>
+                  <th align="left" style="padding:6px 12px;border-bottom:2px solid #e6e8eb;color:#888;font-weight:600;">Búsqueda</th>
+                  <th align="left" style="padding:6px 12px;border-bottom:2px solid #e6e8eb;color:#888;font-weight:600;">Resultados</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </td>
         </tr>`;
     })
     .join("");
-
-  const countLine = `${searches.length} búsqueda${searches.length === 1 ? "" : "s"}`;
 
   const html = `<!doctype html>
 <html lang="es">
@@ -70,32 +103,14 @@ export function renderHistoryEmail(input: HistoryEmailInput): RenderedEmail {
               <td style="padding:24px 28px 8px;">
                 <h1 style="margin:0;font-size:18px;color:#111;">Pruff Propiedades</h1>
                 <p style="margin:6px 0 0;font-size:14px;color:#666;">Historial de búsquedas del día</p>
+                <p style="margin:8px 0 0;font-size:14px;color:#111;"><strong>Fecha:</strong> ${escapeHtml(dispatchDate)} <span style="color:#999;">(${escapeHtml(timeZone)})</span></p>
+                <p style="margin:4px 0 0;font-size:14px;color:#111;"><strong>Total:</strong> ${escapeHtml(plural(users.length, "usuario", "usuarios"))} · ${escapeHtml(plural(totalSearches, "búsqueda", "búsquedas"))}</p>
               </td>
             </tr>
+            ${userBlocks}
             <tr>
-              <td style="padding:8px 28px 0;">
-                <p style="margin:0;font-size:14px;color:#111;"><strong>Usuario:</strong> ${escapeHtml(userLabel)}</p>
-                <p style="margin:4px 0 0;font-size:14px;color:#111;"><strong>Fecha:</strong> ${escapeHtml(dispatchDate)} <span style="color:#999;">(${escapeHtml(timeZone)})</span></p>
-                <p style="margin:4px 0 16px;font-size:14px;color:#111;"><strong>Total:</strong> ${escapeHtml(countLine)}</p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:0 28px 24px;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;">
-                  <thead>
-                    <tr>
-                      <th align="left" style="padding:8px 12px;border-bottom:2px solid #e6e8eb;color:#888;font-weight:600;">Hora</th>
-                      <th align="left" style="padding:8px 12px;border-bottom:2px solid #e6e8eb;color:#888;font-weight:600;">Búsqueda</th>
-                      <th align="left" style="padding:8px 12px;border-bottom:2px solid #e6e8eb;color:#888;font-weight:600;">Resultados</th>
-                    </tr>
-                  </thead>
-                  <tbody>${rows}</tbody>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:0 28px 24px;">
-                <p style="margin:0;font-size:12px;color:#999;">Resumen automático de tu actividad de búsqueda en la plataforma.</p>
+              <td style="padding:24px 28px;">
+                <p style="margin:0;font-size:12px;color:#999;">Resumen automático de la actividad de búsqueda en la plataforma.</p>
               </td>
             </tr>
           </table>
@@ -105,23 +120,28 @@ export function renderHistoryEmail(input: HistoryEmailInput): RenderedEmail {
   </body>
 </html>`;
 
-  const textLines = [
+  const textLines: string[] = [
     `Pruff Propiedades — Historial de búsquedas del día`,
-    ``,
-    `Usuario: ${userLabel}`,
     `Fecha: ${dispatchDate} (${timeZone})`,
-    `Total: ${countLine}`,
-    ``,
-    ...searches.map((s) => {
+    `Total: ${plural(users.length, "usuario", "usuarios")} · ${plural(totalSearches, "búsqueda", "búsquedas")}`,
+  ];
+  for (const user of users) {
+    textLines.push(
+      ``,
+      `${user.label} — ${plural(user.searches.length, "búsqueda", "búsquedas")}`,
+    );
+    for (const s of user.searches) {
       const count =
         typeof s.resultCount === "number"
-          ? ` — ${s.resultCount} resultado(s)`
+          ? ` — ${plural(s.resultCount, "resultado", "resultados")}`
           : "";
-      return `  ${s.time}  ${describeSearch(s)}${count}`;
-    }),
+      textLines.push(`  ${s.time}  ${describeSearch(s)}${count}`);
+    }
+  }
+  textLines.push(
     ``,
-    `Resumen automático de tu actividad de búsqueda en la plataforma.`,
-  ];
+    `Resumen automático de la actividad de búsqueda en la plataforma.`,
+  );
 
   return { subject, html, text: textLines.join("\n") };
 }

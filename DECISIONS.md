@@ -50,7 +50,9 @@ Tablas propias (schema `public`, gestionadas por Prisma):
 FAVORITE_REMOVE`) con `payload` JSONB flexible. Sostiene tanto la auditoría end-to-end como el
   historial de búsquedas (se lee `WHERE type='SEARCH'`, sin tabla aparte).
 - **`favorites`** — referencia (`external_id` + `url`) + **snapshot mínimo** (título/precio/imagen).
-- **`email_dispatches`** — idempotencia del job diario (`unique(user_id, dispatch_date)`).
+- **`email_dispatches`** — idempotencia del job diario. El correo es **un único digest por día**
+  con el historial de todos los usuarios, así que la unicidad es por **`dispatch_date`** (no por
+  usuario): correr el job dos veces el mismo día no reenvía "el correo de ese día".
 
 Los usuarios viven en `auth.users` (Supabase Auth); nuestras tablas solo referencian `user_id`.
 

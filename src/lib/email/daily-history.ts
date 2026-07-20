@@ -2,29 +2,23 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { getEmailConfig } from "./config";
 import { zonedDayRange, formatTimeInZone } from "./dates";
-import { renderHistoryEmail, type SearchEntry } from "./render";
+import {
+  renderDigestEmail,
+  type SearchEntry,
+  type UserHistory,
+} from "./render";
 import { sendEmail } from "./send";
 
 export type DispatchOutcome = "sent" | "skipped" | "failed";
-
-export interface UserDispatchResult {
-  userId: string;
-  userLabel: string;
-  searchCount: number;
-  outcome: DispatchOutcome;
-  dryRun?: boolean;
-  error?: string;
-}
 
 export interface DailyHistorySummary {
   dispatchDate: string;
   timeZone: string;
   dryRun: boolean;
   usersWithActivity: number;
-  sent: number;
-  skipped: number;
-  failed: number;
-  results: UserDispatchResult[];
+  totalSearches: number;
+  outcome: DispatchOutcome; // sent | skipped (ya enviado o sin actividad) | failed
+  reason?: string; // detalle cuando skipped/failed
 }
 
 // Lee de forma defensiva un string de un payload JSON arbitrario.
@@ -81,8 +75,9 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
-// Job diario: por cada usuario con búsquedas en el día de `now`, arma y envía el correo,
-// registrando el dispatch para garantizar idempotencia (un envío por usuario por día).
+// Job diario: arma UN correo digest con el historial de búsquedas de todos los usuarios con
+// actividad ese día y lo envía a los destinatarios (EMAIL_TO). Idempotente por día:
+// correr el job dos veces el mismo día no reenvía (unique(dispatch_date)).
 export async function runDailyHistory(now: Date): Promise<DailyHistorySummary> {
   const config = getEmailConfig();
   const range = zonedDayRange(now, config.timeZone);
@@ -114,89 +109,68 @@ export async function runDailyHistory(now: Date): Promise<DailyHistorySummary> {
   }
 
   const userIds = [...byUser.keys()];
-  const emails = await resolveUserEmails(userIds);
-
-  const results: UserDispatchResult[] = [];
-  for (const [userId, searches] of byUser) {
-    const userLabel = labelFor(userId, emails);
-    results.push(
-      await dispatchForUser({
-        userId,
-        userLabel,
-        searches,
-        dispatchDate: range.dispatchDate,
-        dispatchDateUtc: range.dispatchDateUtc,
-        timeZone: config.timeZone,
-      }),
-    );
-  }
-
-  const summary: DailyHistorySummary = {
+  const totalSearches = [...byUser.values()].reduce((n, s) => n + s.length, 0);
+  const base = {
     dispatchDate: range.dispatchDate,
     timeZone: config.timeZone,
     dryRun: config.dryRun,
     usersWithActivity: userIds.length,
-    sent: results.filter((r) => r.outcome === "sent").length,
-    skipped: results.filter((r) => r.outcome === "skipped").length,
-    failed: results.filter((r) => r.outcome === "failed").length,
-    results,
+    totalSearches,
   };
-  return summary;
+
+  // Sin actividad → no hay correo que enviar ese día.
+  if (userIds.length === 0) {
+    return { ...base, outcome: "skipped", reason: "sin actividad hoy" };
+  }
+
+  const emails = await resolveUserEmails(userIds);
+  const users: UserHistory[] = userIds
+    .map((id) => ({ label: labelFor(id, emails), searches: byUser.get(id)! }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const dispatch = await reserveAndSendDigest(range, users, config.timeZone);
+  return { ...base, ...dispatch };
 }
 
-// Reserva el slot de idempotencia y, si es nuevo, envía. Si el envío falla, libera la reserva
-// para que una corrida posterior reintente (at-least-once, sin duplicar).
-async function dispatchForUser(args: {
-  userId: string;
-  userLabel: string;
-  searches: SearchEntry[];
-  dispatchDate: string;
-  dispatchDateUtc: Date;
-  timeZone: string;
-}): Promise<UserDispatchResult> {
-  const {
-    userId,
-    userLabel,
-    searches,
-    dispatchDate,
-    dispatchDateUtc,
-    timeZone,
-  } = args;
-  const base = { userId, userLabel, searchCount: searches.length };
-
-  // 1) Reserva atómica vía unique(user_id, dispatch_date). Si ya existe → ya se envió hoy.
+// Reserva atómica del slot del día (unique(dispatch_date)) y, si es nuevo, envía el digest.
+// Si el envío falla, libera la reserva para que una corrida posterior reintente (at-least-once,
+// sin duplicar el correo del día).
+async function reserveAndSendDigest(
+  range: { dispatchDate: string; dispatchDateUtc: Date },
+  users: UserHistory[],
+  timeZone: string,
+): Promise<{ outcome: DispatchOutcome; reason?: string }> {
+  // 1) Reserva. Si ya existe la fila del día → ya se envió hoy.
   try {
     await prisma.emailDispatch.create({
-      data: { userId, dispatchDate: dispatchDateUtc },
+      data: { dispatchDate: range.dispatchDateUtc, userCount: users.length },
     });
   } catch (err) {
     if (isUniqueViolation(err)) {
-      return { ...base, outcome: "skipped" };
+      return { outcome: "skipped", reason: "ya enviado hoy" };
     }
     throw err;
   }
 
   // 2) Reserva nueva → enviar (o dry-run).
   try {
-    const rendered = renderHistoryEmail({
-      userLabel,
-      dispatchDate,
+    const rendered = renderDigestEmail({
+      dispatchDate: range.dispatchDate,
       timeZone,
-      searches,
+      users,
     });
-    const result = await sendEmail(rendered);
-    return { ...base, outcome: "sent", dryRun: result.dryRun };
+    await sendEmail(rendered);
+    return { outcome: "sent" };
   } catch (err) {
-    // 3) Falló el envío → liberar la reserva para permitir reintento.
+    // 3) Falló el envío → liberar la reserva para permitir reintento sin duplicar.
     await prisma.emailDispatch
-      .deleteMany({ where: { userId, dispatchDate: dispatchDateUtc } })
+      .deleteMany({ where: { dispatchDate: range.dispatchDateUtc } })
       .catch(() => {
         /* si el rollback falla, el próximo run lo verá como ya enviado; se prioriza no crashear */
       });
     return {
-      ...base,
       outcome: "failed",
-      error: err instanceof Error ? err.message : String(err),
+      reason: err instanceof Error ? err.message : String(err),
     };
   }
 }
