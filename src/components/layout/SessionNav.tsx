@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/Button";
 import { LogOutIcon } from "@/components/icons";
+import { logout } from "@/lib/auth/actions";
 
 /**
  * Área de sesión del header (Server Component).
@@ -49,12 +50,13 @@ export async function SessionNav({ className }: { className?: string }) {
       >
         {email}
       </span>
-      <Button asChild variant="outline" size="sm">
-        <Link href="/logout">
+      {/* Cierra la sesión al toque (server action), sin página de confirmación intermedia. */}
+      <form action={logout}>
+        <Button type="submit" variant="outline" size="sm">
           <LogOutIcon className="size-4" />
           <span>Salir</span>
-        </Link>
-      </Button>
+        </Button>
+      </form>
     </div>
   );
 }
