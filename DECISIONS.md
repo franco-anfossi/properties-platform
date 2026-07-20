@@ -1,8 +1,9 @@
 # DECISIONS.md
 
-Razonamiento detrás de la plataforma. Documento vivo: se completa a medida que avanza la
-implementación. Diseño completo en
-`docs/superpowers/specs/2026-07-19-plataforma-propiedades-scraping-design.md`.
+Razonamiento detrás de la plataforma. Cubre los cuatro puntos que pide el desafío —scraping,
+modelo de datos, robustez y un trade-off— más la trazabilidad de punta a punta. Diseño completo en
+`docs/superpowers/specs/2026-07-19-plataforma-propiedades-scraping-design.md`; app en vivo en
+https://properties-platform.vercel.app.
 
 ## 1. Scraping — ¿cómo y por qué?
 
@@ -117,16 +118,24 @@ orden `LOGIN → SEARCH → SCRAPE → CLICK → FAVORITE_ADD`, `SEARCH.searchId
 `CLICK.externalId == FAVORITE_ADD.externalId`; luego limpia. Además se validó en runtime en el
 navegador (sembrar en `/debug/traceability` y ver el timeline reconstruido).
 
-Reconstruye `login → búsqueda → scraping → click → favorito`.
-
 ## 3. Robustez — ¿qué pasa si el portal cambia, bloquea o no responde?
 
-- **Cambia el HTML/JSON** (no aparece el bloque polycard) → el scraper devuelve un **error tipado**;
-  la plataforma no crashea y registra un evento `SCRAPE` con `status=error`.
-- **Bloqueo / no responde / timeout** → degradación elegante: mensaje claro al usuario, reintentos
-  acotados, y el error queda trazado.
-- **Contingencia de método** → PortalTerreno documentado como portal de respaldo, y Playwright como
-  fallback de técnica si el portal deja de server-renderear.
+El scraper (`searchProperties`) es una **función pura que nunca lanza**: siempre resuelve a un
+`SearchOutcome` tipado con un `status`, y la plataforma decide qué mostrar según ese status —nunca
+crashea la app. Cada búsqueda registra un evento `SCRAPE` con ese `status` y la `durationMs`, así
+que todo fallo queda **trazado** (no se pierde en silencio).
+
+- **No responde / red caída / timeout** → la capa de red (`fetch.ts`) usa `AbortController` con
+  timeout de **15 s** por request y **2 reintentos** (ante fallo de red, timeout o 5xx). Si aun así
+  falla → `status: "error"`; la UI muestra un mensaje claro e invita a reintentar.
+- **Te bloquea** (HTTP 403 / 429) → `status: "blocked"` con mensaje distinto ("bloqueo o rate
+  limit"), sin reintentar en loop.
+- **Cambia el HTML/JSON** → un bloque `polycard` que no parsea se **descarta** sin romper el resto.
+  Se distingue "el formato cambió" de "sin resultados": si el marcador polycard existe pero **nada**
+  parseó → `status: "error"` explícito; si no hay marcador ni bloques → `status: "empty"` (búsqueda
+  legítima sin resultados).
+- **Contingencia de método** → PortalTerreno queda documentado como portal de respaldo, y Playwright
+  como fallback de técnica si el portal migrara a rendering 100% client-side.
 
 ## 4. Trade-off consciente
 
