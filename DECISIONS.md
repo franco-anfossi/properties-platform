@@ -141,6 +141,11 @@ propiedades. **Con más tiempo:** un refresco periódico opcional del snapshot y
 - **Next.js + Vercel**: full-stack en un repo, deploy directo (cubre el bonus).
 - **Supabase** (Postgres + Auth): lo maneja el equipo; credenciales en el `auth` del propio Postgres.
 - **Prisma 7**: schema versionado + migraciones (buen soporte al punto de "modelo de datos").
-- **Resend**: envío del correo diario (Supabase no envía correos arbitrarios).
-- **Vercel Cron**: scheduler del job diario; la lógica (Prisma + Resend) vive natural en una route.
+- **SMTP (Gmail) para el correo diario**: Supabase no envía correos arbitrarios (solo de auth).
+  Se evaluó Resend, pero **sin un dominio verificado Resend solo envía al email de la propia
+  cuenta**, no a destinatarios arbitrarios como los del desafío. SMTP con una cuenta Gmail (App
+  Password) envía a cualquier dirección sin dominio propio, así que es el camino pragmático para
+  cumplir "enviar a juanjose@ y ramiro.galvez@". Con más tiempo / dominio propio se volvería a un
+  proveedor transaccional (Resend/SES) con DKIM para mejor entregabilidad.
+- **Vercel Cron**: scheduler del job diario; la lógica (Prisma + envío) vive natural en una route.
   Alternativa evaluada: `pg_cron` de Supabase.
