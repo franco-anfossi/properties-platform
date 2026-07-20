@@ -1,4 +1,4 @@
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { getEmailConfig } from "./config";
 import type { RenderedEmail } from "./render";
 
@@ -7,8 +7,8 @@ export interface SendResult {
   id?: string;
 }
 
-// Envía el correo con Resend, o hace DRY-RUN (loguea) si no hay una key real configurada.
-// En dry-run el flujo completo (incluida la idempotencia) se puede probar sin la key.
+// Envía el correo por SMTP (Gmail), o hace DRY-RUN (loguea) si no hay credenciales SMTP.
+// En dry-run el flujo completo (incluida la idempotencia) se puede probar sin credenciales.
 export async function sendEmail(msg: RenderedEmail): Promise<SendResult> {
   const config = getEmailConfig();
 
@@ -18,17 +18,23 @@ export async function sendEmail(msg: RenderedEmail): Promise<SendResult> {
     );
   }
 
-  if (config.dryRun) {
+  if (!config.smtp) {
     console.info(
-      `[email:dry-run] (RESEND_API_KEY placeholder/ausente) NO se envía. ` +
+      `[email:dry-run] (sin credenciales SMTP) NO se envía. ` +
         `to=${config.to.join(", ")} from=${config.from} subject="${msg.subject}"`,
     );
     console.info(`[email:dry-run] cuerpo (texto plano):\n${msg.text}`);
     return { dryRun: true };
   }
 
-  const resend = new Resend(config.apiKey);
-  const { data, error } = await resend.emails.send({
+  const transport = nodemailer.createTransport({
+    host: config.smtp.host,
+    port: config.smtp.port,
+    secure: config.smtp.port === 465, // 465 = SSL directo; 587 = STARTTLS
+    auth: { user: config.smtp.user, pass: config.smtp.pass },
+  });
+
+  const info = await transport.sendMail({
     from: config.from,
     to: config.to,
     subject: msg.subject,
@@ -36,11 +42,5 @@ export async function sendEmail(msg: RenderedEmail): Promise<SendResult> {
     text: msg.text,
   });
 
-  if (error) {
-    throw new Error(
-      `Resend rechazó el envío: ${error.message ?? JSON.stringify(error)}`,
-    );
-  }
-
-  return { dryRun: false, id: data?.id };
+  return { dryRun: false, id: info.messageId };
 }
