@@ -26,7 +26,8 @@ dato efímero del portal). La única excepción es el **snapshot mínimo** dentr
 - **Next.js** (App Router, TypeScript, Tailwind, `src/`) — full-stack, deploy en Vercel.
 - **Supabase Postgres** (DB) + **Supabase Auth** (login; credenciales en el schema `auth`).
 - **Prisma 7** para nuestras tablas del schema `public` (driver adapter `@prisma/adapter-pg`).
-- **Resend** para el correo diario (Supabase NO envía correos arbitrarios, solo de auth).
+- **SMTP (Gmail vía Nodemailer)** para el correo diario. Resend sin dominio verificado solo envía
+  al email de la propia cuenta; Gmail SMTP (App Password) envía a cualquier destinatario.
 - **Vercel Cron** para el scheduler (alternativa: `pg_cron`).
 
 ### Prisma 7 — particularidades
@@ -43,7 +44,8 @@ FAVORITE_ADD, FAVORITE_REMOVE`. Reconstrucción con **una sola query**:
   `SELECT * FROM events WHERE user_id = $1 ORDER BY created_at ASC`.
   El historial de búsquedas se lee de aquí (`type='SEARCH'`), no hay tabla aparte.
 - `favorites` — referencia (`external_id` + `url`) + snapshot mínimo. Unique(`user_id`, `external_id`).
-- `email_dispatches` — idempotencia del cron. Unique(`user_id`, `dispatch_date`).
+- `email_dispatches` — idempotencia del cron. El correo diario es **un digest único** con el
+  historial de todos los usuarios, por eso es Unique(`dispatch_date`) (uno por día).
 
 `user_id` referencia `auth.users.id` (UUID), sin FK cross-schema.
 

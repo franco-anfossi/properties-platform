@@ -56,13 +56,14 @@ model Favorite {
   @@map("favorites")
 }
 
-/// Idempotencia del job diario: un envío por usuario por día como máximo.
+/// Idempotencia del job diario: UN correo digest por día como máximo (contiene el historial de
+/// todos los usuarios con actividad). `dispatch_date` es único → correr el job dos veces el mismo
+/// día no reenvía. `user_count` guarda cuántos usuarios incluyó ese digest (auditoría).
 model EmailDispatch {
   id           String   @id @default(uuid()) @db.Uuid
-  userId       String   @map("user_id") @db.Uuid
-  dispatchDate DateTime @map("dispatch_date") @db.Date
+  dispatchDate DateTime @unique @map("dispatch_date") @db.Date
+  userCount    Int      @default(0) @map("user_count")
   sentAt       DateTime @default(now()) @map("sent_at") @db.Timestamptz(6)
 
-  @@unique([userId, dispatchDate])
   @@map("email_dispatches")
 }
