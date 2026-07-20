@@ -95,7 +95,7 @@ export function renderHistoryEmail(input: HistoryEmailInput): RenderedEmail {
             </tr>
             <tr>
               <td style="padding:0 28px 24px;">
-                <p style="margin:0;font-size:12px;color:#999;">Correo automático del job diario de trazabilidad. Reconstruido desde el spine de eventos (type=SEARCH).</p>
+                <p style="margin:0;font-size:12px;color:#999;">Resumen automático de tu actividad de búsqueda en la plataforma.</p>
               </td>
             </tr>
           </table>
@@ -120,7 +120,7 @@ export function renderHistoryEmail(input: HistoryEmailInput): RenderedEmail {
       return `  ${s.time}  ${describeSearch(s)}${count}`;
     }),
     ``,
-    `Correo automático del job diario (eventos type=SEARCH).`,
+    `Resumen automático de tu actividad de búsqueda en la plataforma.`,
   ];
 
   return { subject, html, text: textLines.join("\n") };
